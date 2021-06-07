@@ -1,9 +1,11 @@
 package sspanel
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -25,13 +27,16 @@ var (
 
 // APIClient create a api client to the panel.
 type APIClient struct {
-	client      *resty.Client
-	APIHost     string
-	NodeID      int
-	Key         string
-	NodeType    string
-	EnableVless bool
-	EnableXTLS  bool
+	client        *resty.Client
+	APIHost       string
+	NodeID        int
+	Key           string
+	NodeType      string
+	EnableVless   bool
+	EnableXTLS    bool
+	SpeedLimit    float64
+	DeviceLimit   int
+	LocalRuleList []api.DetectRule
 }
 
 // New creat a api instance
@@ -54,16 +59,58 @@ func New(apiConfig *api.Config) *APIClient {
 	client.SetHostURL(apiConfig.APIHost)
 	// Create Key for each requests
 	client.SetQueryParam("key", apiConfig.Key)
+	// Add support for muKey
+	client.SetQueryParam("muKey", apiConfig.Key)
+	// Read local rule list
+	localRuleList := readLocalRuleList(apiConfig.RuleListPath)
 	apiClient := &APIClient{
-		client:      client,
-		NodeID:      apiConfig.NodeID,
-		Key:         apiConfig.Key,
-		APIHost:     apiConfig.APIHost,
-		NodeType:    apiConfig.NodeType,
-		EnableVless: apiConfig.EnableVless,
-		EnableXTLS:  apiConfig.EnableXTLS,
+		client:        client,
+		NodeID:        apiConfig.NodeID,
+		Key:           apiConfig.Key,
+		APIHost:       apiConfig.APIHost,
+		NodeType:      apiConfig.NodeType,
+		EnableVless:   apiConfig.EnableVless,
+		EnableXTLS:    apiConfig.EnableXTLS,
+		SpeedLimit:    apiConfig.SpeedLimit,
+		DeviceLimit:   apiConfig.DeviceLimit,
+		LocalRuleList: localRuleList,
 	}
 	return apiClient
+}
+
+// readLocalRuleList reads the local rule list file
+func readLocalRuleList(path string) (LocalRuleList []api.DetectRule) {
+
+	LocalRuleList = make([]api.DetectRule, 0)
+	if path != "" {
+		// open the file
+		file, err := os.Open(path)
+
+		//handle errors while opening
+		if err != nil {
+			log.Printf("Error when opening file: %s", err)
+			return LocalRuleList
+		}
+
+		fileScanner := bufio.NewScanner(file)
+
+		// read line by line
+		for fileScanner.Scan() {
+			LocalRuleList = append(LocalRuleList, api.DetectRule{
+				ID:      -1,
+				Pattern: fileScanner.Text(),
+			})
+		}
+		// handle first encountered error while reading
+		if err := fileScanner.Err(); err != nil {
+			log.Fatalf("Error while reading file: %s", err)
+			return make([]api.DetectRule, 0)
+		}
+
+		file.Close()
+	}
+
+	return LocalRuleList
 }
 
 // Describe return a description of the client
@@ -283,9 +330,9 @@ func (c *APIClient) ReportIllegal(detectResultList *[]api.DetectResult) error {
 
 // ParseV2rayNodeResponse parse the response for the given nodeinfor format
 func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (*api.NodeInfo, error) {
-	var enableTLS, enableVless bool
-	enableVless = c.EnableVless
+	var enableTLS bool
 	var path, host, TLStype, transportProtocol string
+	var speedlimit uint64 = 0
 	if nodeInfoResponse.RawServerString == "" {
 		return nil, fmt.Errorf("No server info in response")
 	}
@@ -303,7 +350,11 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 	for _, value := range serverConf[3:5] {
 		switch value {
 		case "tls", "xtls":
-			TLStype = value
+			if c.EnableXTLS {
+				TLStype = "xtls"
+			} else {
+				TLStype = "tls"
+			}
 			enableTLS = true
 		default:
 			if value != "" {
@@ -326,15 +377,14 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 			path = rawPath
 		case "host":
 			host = value
-		case "enable_vless":
-			{
-				if value == "true" {
-					enableVless = true
-				}
-			}
 		}
 	}
-	speedlimit := (nodeInfoResponse.SpeedLimit * 1000000) / 8
+	if c.SpeedLimit > 0 {
+		speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
+	} else {
+		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
+	}
+
 	// Create GeneralNodeInfo
 	nodeinfo := &api.NodeInfo{
 		NodeType:          c.NodeType,
@@ -347,7 +397,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 		TLSType:           TLStype,
 		Path:              path,
 		Host:              host,
-		EnableVless:       enableVless,
+		EnableVless:       c.EnableVless,
 	}
 
 	return nodeinfo, nil
@@ -356,6 +406,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 // ParseSSNodeResponse parse the response for the given nodeinfor format
 func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *NodeInfoResponse) (*api.NodeInfo, error) {
 	var port int = 0
+	var speedlimit uint64 = 0
 	var method string
 	path := "/mod_mu/users"
 	res, err := c.client.R().
@@ -384,7 +435,11 @@ func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *NodeInfoResponse) (*ap
 		return nil, fmt.Errorf("Cant find the single port multi user")
 	}
 
-	speedlimit := (nodeInfoResponse.SpeedLimit * 1000000) / 8
+	if c.SpeedLimit > 0 {
+		speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
+	} else {
+		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
+	}
 	// Create GeneralNodeInfo
 	nodeinfo := &api.NodeInfo{
 		NodeType:          c.NodeType,
@@ -402,8 +457,14 @@ func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *NodeInfoResponse) (*ap
 func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) (*api.NodeInfo, error) {
 	// 域名或IP;port=连接端口#偏移端口|host=xx
 	// gz.aaa.com;port=443#12345|host=hk.aaa.com
-	var p, TLSType, host, enableXtls, outsidePort, insidePort string
-	TLSType = "tls"
+	var p, TLSType, host, outsidePort, insidePort string
+	var speedlimit uint64 = 0
+	if c.EnableXTLS {
+		TLSType = "xtls"
+	} else {
+		TLSType = "tls"
+	}
+
 	if nodeInfoResponse.RawServerString == "" {
 		return nil, fmt.Errorf("No server info in response")
 	}
@@ -416,9 +477,6 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 	if result := hostRe.FindStringSubmatch(nodeInfoResponse.RawServerString); len(result) > 1 {
 		host = result[1]
 	}
-	if result := enableXtlsRe.FindStringSubmatch(nodeInfoResponse.RawServerString); len(result) > 1 {
-		enableXtls = result[1]
-	}
 
 	if insidePort != "" {
 		p = insidePort
@@ -430,10 +488,11 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 	if err != nil {
 		return nil, err
 	}
-	if enableXtls == "true" {
-		TLSType = "xtls"
+	if c.SpeedLimit > 0 {
+		speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
+	} else {
+		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
 	}
-	speedlimit := (nodeInfoResponse.SpeedLimit * 1000000) / 8
 	// Create GeneralNodeInfo
 	nodeinfo := &api.NodeInfo{
 		NodeType:          c.NodeType,
@@ -449,17 +508,29 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 	return nodeinfo, nil
 }
 
-// ParseUserListResponse parse the response for the given nodeinfor format
+// ParseUserListResponse parse the response for the given nodeinfo format
 func (c *APIClient) ParseUserListResponse(userInfoResponse *[]UserResponse) (*[]api.UserInfo, error) {
+	var deviceLimit int = 0
+	var speedlimit uint64 = 0
 	userList := make([]api.UserInfo, len(*userInfoResponse))
 	for i, user := range *userInfoResponse {
+		if c.DeviceLimit > 0 {
+			deviceLimit = c.DeviceLimit
+		} else {
+			deviceLimit = user.DeviceLimit
+		}
+		if c.SpeedLimit > 0 {
+			speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
+		} else {
+			speedlimit = uint64((user.SpeedLimit * 1000000) / 8)
+		}
 		userList[i] = api.UserInfo{
 			UID:           user.ID,
 			Email:         user.Email,
 			UUID:          user.UUID,
 			Passwd:        user.Passwd,
-			SpeedLimit:    (user.SpeedLimit * 1000000) / 8,
-			DeviceLimit:   user.DeviceLimit,
+			SpeedLimit:    speedlimit,
+			DeviceLimit:   deviceLimit,
 			Port:          user.Port,
 			Method:        user.Method,
 			Protocol:      user.Protocol,

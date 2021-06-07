@@ -10,10 +10,16 @@ import (
 	"github.com/juju/ratelimit"
 )
 
+type UserInfo struct {
+	UID         int
+	SpeedLimit  uint64
+	DeviceLimit int
+}
+
 type InboundInfo struct {
 	Tag            string
 	NodeSpeedLimit uint64
-	UserInfo       *sync.Map // Key: Email value: api.UserInfo
+	UserInfo       *sync.Map // Key: Email value: UserInfo
 	BucketHub      *sync.Map // key: Email, value: *ratelimit.Bucket
 	UserOnlineIP   *sync.Map // Key: Email Value: *sync.Map: Key: IP, Value: UID
 }
@@ -36,8 +42,12 @@ func (l *Limiter) AddInboundLimiter(tag string, nodeSpeedLimit uint64, userList 
 		UserOnlineIP:   new(sync.Map),
 	}
 	userMap := new(sync.Map)
-	for _, user := range *userList {
-		userMap.Store(fmt.Sprintf("%s|%s|%d", tag, user.Email, user.UID), user)
+	for _, u := range *userList {
+		userMap.Store(fmt.Sprintf("%s|%s|%d", tag, u.Email, u.UID), UserInfo{
+			UID:         u.UID,
+			SpeedLimit:  u.SpeedLimit,
+			DeviceLimit: u.DeviceLimit,
+		})
 	}
 	inboundInfo.UserInfo = userMap
 	l.InboundInfo.Store(tag, inboundInfo) // Replace the old inbound info
@@ -50,12 +60,12 @@ func (l *Limiter) UpdateInboundLimiter(tag string, updatedUserList *[]api.UserIn
 		inboundInfo := value.(*InboundInfo)
 		// Update User info
 		for _, u := range *updatedUserList {
-			inboundInfo.UserInfo.Store(fmt.Sprintf("%s|%s|%d", tag, u.Email, u.UID), u)
-			limit := determineRate(inboundInfo.NodeSpeedLimit, u.SpeedLimit) // If need the limit
-			if limit > 0 {
-				limiter := ratelimit.NewBucketWithQuantum(time.Duration(int64(time.Second)), int64(limit), int64(limit)) // Byte/s
-				inboundInfo.BucketHub.Store(fmt.Sprintf("%s|%s|%d", tag, u.Email, u.UID), limiter)
-			}
+			inboundInfo.UserInfo.Store(fmt.Sprintf("%s|%s|%d", tag, u.Email, u.UID), UserInfo{
+				UID:         u.UID,
+				SpeedLimit:  u.SpeedLimit,
+				DeviceLimit: u.DeviceLimit,
+			})
+			inboundInfo.BucketHub.Delete(fmt.Sprintf("%s|%s|%d", tag, u.Email, u.UID)) // Delete old limiter bucket
 		}
 	} else {
 		return fmt.Errorf("no such inbound in limiter: %s", tag)
@@ -72,7 +82,14 @@ func (l *Limiter) GetOnlineDevice(tag string) (*[]api.OnlineUser, error) {
 	onlineUser := make([]api.OnlineUser, 0)
 	if value, ok := l.InboundInfo.Load(tag); ok {
 		inboundInfo := value.(*InboundInfo)
-
+		// Clear Speed Limiter bucket for users who are not online
+		inboundInfo.BucketHub.Range(func(key, value interface{}) bool {
+			email := key.(string)
+			if _, exists := inboundInfo.UserOnlineIP.Load(email); !exists {
+				inboundInfo.BucketHub.Delete(email)
+			}
+			return true
+		})
 		inboundInfo.UserOnlineIP.Range(func(key, value interface{}) bool {
 			ipMap := value.(*sync.Map)
 			ipMap.Range(func(key, value interface{}) bool {
@@ -99,7 +116,7 @@ func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *r
 		var deviceLimit int = 0
 		var uid int = 0
 		if v, ok := inboundInfo.UserInfo.Load(email); ok {
-			u := v.(api.UserInfo)
+			u := v.(UserInfo)
 			uid = u.UID
 			userLimit = u.SpeedLimit
 			deviceLimit = u.DeviceLimit

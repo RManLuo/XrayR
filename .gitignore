@@ -8,5 +8,7 @@ common/Inboundbuilder/.lego/
 common/legocmd/.lego/
 .vscode/launch.json
 main/.lego
+main/cert
 main/config.yml
 ./vscode
+.idea/*

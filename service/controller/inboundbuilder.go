@@ -14,11 +14,11 @@ import (
 )
 
 //InboundBuilder build Inbound config for different protocol
-func InboundBuilder(listenIP string, nodeInfo *api.NodeInfo, certConfig *CertConfig) (*core.InboundHandlerConfig, error) {
+func InboundBuilder(config *Config, nodeInfo *api.NodeInfo) (*core.InboundHandlerConfig, error) {
 	inboundDetourConfig := &conf.InboundDetourConfig{}
 	// Build Listen IP address
-	if listenIP != "" {
-		ipAddress := net.ParseAddress(listenIP)
+	if config.ListenIP != "" {
+		ipAddress := net.ParseAddress(config.ListenIP)
 		inboundDetourConfig.ListenOn = &conf.Address{ipAddress}
 	}
 
@@ -45,8 +45,21 @@ func InboundBuilder(listenIP string, nodeInfo *api.NodeInfo, certConfig *CertCon
 	if nodeInfo.NodeType == "V2ray" {
 		if nodeInfo.EnableVless {
 			protocol = "vless"
-			proxySetting = &conf.VLessInboundConfig{
-				Decryption: "none",
+			// Enable fallback
+			if config.EnableFallback {
+				fallbackConfigs, err := buildVlessFallbacks(config.FallBackConfigs)
+				if err == nil {
+					proxySetting = &conf.VLessInboundConfig{
+						Decryption: "none",
+						Fallbacks:  fallbackConfigs,
+					}
+				} else {
+					return nil, err
+				}
+			} else {
+				proxySetting = &conf.VLessInboundConfig{
+					Decryption: "none",
+				}
 			}
 		} else {
 			protocol = "vmess"
@@ -54,7 +67,19 @@ func InboundBuilder(listenIP string, nodeInfo *api.NodeInfo, certConfig *CertCon
 		}
 	} else if nodeInfo.NodeType == "Trojan" {
 		protocol = "trojan"
-		proxySetting = &conf.TrojanServerConfig{}
+		// Enable fallback
+		if config.EnableFallback {
+			fallbackConfigs, err := buildTrojanFallbacks(config.FallBackConfigs)
+			if err == nil {
+				proxySetting = &conf.TrojanServerConfig{
+					Fallbacks: fallbackConfigs,
+				}
+			} else {
+				return nil, err
+			}
+		} else {
+			proxySetting = &conf.TrojanServerConfig{}
+		}
 	} else if nodeInfo.NodeType == "Shadowsocks" {
 		protocol = "shadowsocks"
 		proxySetting = &conf.ShadowsocksServerConfig{}
@@ -82,21 +107,34 @@ func InboundBuilder(listenIP string, nodeInfo *api.NodeInfo, certConfig *CertCon
 	if err != nil {
 		return nil, fmt.Errorf("convert TransportProtocol failed: %s", err)
 	}
-	if networkType == "websocket" {
+	if networkType == "tcp" {
+		tcpSetting := &conf.TCPConfig{
+			AcceptProxyProtocol: config.EnableProxyProtocol,
+		}
+		streamSetting.TCPSettings = tcpSetting
+	} else if networkType == "websocket" {
 		headers := make(map[string]string)
 		headers["Host"] = nodeInfo.Host
 		wsSettings := &conf.WebSocketConfig{
-			Path:    nodeInfo.Path,
-			Headers: headers,
+			AcceptProxyProtocol: config.EnableProxyProtocol,
+			Path:                nodeInfo.Path,
+			Headers:             headers,
 		}
 		streamSetting.WSSettings = wsSettings
+	} else if networkType == "http" {
+		hosts := conf.StringList{nodeInfo.Host}
+		httpSettings := &conf.HTTPConfig{
+			Host: &hosts,
+			Path: nodeInfo.Path,
+		}
+		streamSetting.HTTPSettings = httpSettings
 	}
 
 	streamSetting.Network = &transportProtocol
 	// Build TLS and XTLS settings
-	if nodeInfo.EnableTLS && certConfig.CertMode != "none" {
+	if nodeInfo.EnableTLS && config.CertConfig.CertMode != "none" {
 		streamSetting.Security = nodeInfo.TLSType
-		certFile, keyFile, err := getCertFile(certConfig)
+		certFile, keyFile, err := getCertFile(config.CertConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -148,4 +186,48 @@ func getCertFile(certConfig *CertConfig) (certFile string, keyFile string, err e
 	}
 
 	return "", "", fmt.Errorf("Unsupported certmode: %s", certConfig.CertMode)
+}
+
+func buildVlessFallbacks(fallbackConfigs []*FallBackConfig) ([]*conf.VLessInboundFallback, error) {
+	vlessFallBacks := make([]*conf.VLessInboundFallback, len(fallbackConfigs))
+	for i, c := range fallbackConfigs {
+
+		if c.Dest == "" {
+			return nil, fmt.Errorf("Dest is required for fallback fialed")
+		}
+
+		var dest json.RawMessage
+		dest, err := json.Marshal(c.Dest)
+		if err != nil {
+			return nil, fmt.Errorf("Marshal dest %s config fialed: %s", dest, err)
+		}
+		vlessFallBacks[i] = &conf.VLessInboundFallback{
+			Name: c.SNI,
+			Path: c.Path,
+			Dest: dest,
+		}
+	}
+	return vlessFallBacks, nil
+}
+
+func buildTrojanFallbacks(fallbackConfigs []*FallBackConfig) ([]*conf.TrojanInboundFallback, error) {
+	trojanFallBacks := make([]*conf.TrojanInboundFallback, len(fallbackConfigs))
+	for i, c := range fallbackConfigs {
+
+		if c.Dest == "" {
+			return nil, fmt.Errorf("Dest is required for fallback fialed")
+		}
+
+		var dest json.RawMessage
+		dest, err := json.Marshal(c.Dest)
+		if err != nil {
+			return nil, fmt.Errorf("Marshal dest %s config fialed: %s", dest, err)
+		}
+		trojanFallBacks[i] = &conf.TrojanInboundFallback{
+			Name: c.SNI,
+			Path: c.Path,
+			Dest: dest,
+		}
+	}
+	return trojanFallBacks, nil
 }

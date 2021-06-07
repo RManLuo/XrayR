@@ -5,22 +5,34 @@ import (
 	"fmt"
 
 	"github.com/XrayR-project/XrayR/api"
+	"github.com/xtls/xray-core/common/net"
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/infra/conf"
 )
 
 //OutboundBuilder build freedom outbund config for addoutbound
-func OutboundBuilder(nodeInfo *api.NodeInfo, EnableDNS bool) (*core.OutboundHandlerConfig, error) {
+func OutboundBuilder(config *Config, nodeInfo *api.NodeInfo) (*core.OutboundHandlerConfig, error) {
 	outboundDetourConfig := &conf.OutboundDetourConfig{}
 	outboundDetourConfig.Protocol = "freedom"
 	outboundDetourConfig.Tag = fmt.Sprintf("%s_%d", nodeInfo.NodeType, nodeInfo.Port)
-	// Protocol setting
-	var dnsSettings string = "Asis"
-	if EnableDNS {
-		dnsSettings = "UseIP"
+
+	// Build Send IP address
+	if config.SendIP != "" {
+		ipAddress := net.ParseAddress(config.ListenIP)
+		outboundDetourConfig.SendThrough = &conf.Address{ipAddress}
+	}
+
+	// Freedom Protocol setting
+	var domainStrategy string = "Asis"
+	if config.EnableDNS {
+		if config.DNSType != "" {
+			domainStrategy = config.DNSType
+		} else {
+			domainStrategy = "UseIP"
+		}
 	}
 	proxySetting := &conf.FreedomConfig{
-		DomainStrategy: dnsSettings,
+		DomainStrategy: domainStrategy,
 	}
 	var setting json.RawMessage
 	setting, err := json.Marshal(proxySetting)

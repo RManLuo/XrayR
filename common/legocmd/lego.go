@@ -34,10 +34,18 @@ func New() (*LegoCMD, error) {
 		fmt.Printf("lego version %s %s/%s\n", c.App.Version, runtime.GOOS, runtime.GOARCH)
 	}
 
-	cwd, err := os.Getwd()
-	if err == nil {
-		defaultPath = filepath.Join(cwd, ".lego")
+	// Set default path to configPath/cert
+	var path string = ""
+	configPath := os.Getenv("XRAY_LOCATION_CONFIG")
+	if configPath != "" {
+		path = configPath
+	} else if cwd, err := os.Getwd(); err==nil{
+		path = cwd
+	} else {
+		path = "."
 	}
+	
+	defaultPath = filepath.Join(path, "cert")
 
 	app.Flags = cmd.CreateFlags(defaultPath)
 

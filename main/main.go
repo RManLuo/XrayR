@@ -22,7 +22,7 @@ var (
 )
 
 var (
-	version  = "0.5.0"
+	version  = "0.5.2"
 	codename = "XrayR"
 	intro    = "A Xray backend that supports many panels"
 )
