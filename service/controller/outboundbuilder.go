@@ -18,7 +18,7 @@ func OutboundBuilder(config *Config, nodeInfo *api.NodeInfo) (*core.OutboundHand
 
 	// Build Send IP address
 	if config.SendIP != "" {
-		ipAddress := net.ParseAddress(config.ListenIP)
+		ipAddress := net.ParseAddress(config.SendIP)
 		outboundDetourConfig.SendThrough = &conf.Address{ipAddress}
 	}
 

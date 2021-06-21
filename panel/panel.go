@@ -7,12 +7,14 @@ import (
 	"sync"
 
 	"github.com/XrayR-project/XrayR/api"
+	"github.com/XrayR-project/XrayR/api/pmpanel"
 	"github.com/XrayR-project/XrayR/api/sspanel"
 	"github.com/XrayR-project/XrayR/api/v2board"
 	"github.com/XrayR-project/XrayR/app/mydispatcher"
 	_ "github.com/XrayR-project/XrayR/main/distro/all"
 	"github.com/XrayR-project/XrayR/service"
 	"github.com/XrayR-project/XrayR/service/controller"
+	"github.com/r3labs/diff/v2"
 	"github.com/xtls/xray-core/app/proxyman"
 	"github.com/xtls/xray-core/app/stats"
 	"github.com/xtls/xray-core/common/serial"
@@ -36,35 +38,40 @@ func New(panelConfig *Config) *Panel {
 
 func (p *Panel) loadCore(panelConfig *Config) *core.Instance {
 	// Log Config
-	logConfig := &conf.LogConfig{
-		LogLevel:  panelConfig.LogConfig.Level,
-		AccessLog: panelConfig.LogConfig.AccessPath,
-		ErrorLog:  panelConfig.LogConfig.ErrorPath,
+	coreLogConfig := &conf.LogConfig{}
+	defaultLogConfig := getDefaultLogConfig()
+	if panelConfig.LogConfig != nil {
+		if _, err := diff.Merge(defaultLogConfig, panelConfig.LogConfig, defaultLogConfig); err != nil {
+			log.Panicf("Read Log config failed: %s", err)
+		}
 	}
+	coreLogConfig.LogLevel = defaultLogConfig.Level
+	coreLogConfig.AccessLog = defaultLogConfig.AccessPath
+	coreLogConfig.ErrorLog = defaultLogConfig.ErrorPath
+
 	// DNS config
-	dnsConfig := &conf.DNSConfig{}
+	coreDnsConfig := &conf.DNSConfig{}
 	if panelConfig.DnsConfigPath != "" {
 		if data, err := io.ReadFile(panelConfig.DnsConfigPath); err != nil {
 			log.Panicf("Failed to read dns.json at: %s", panelConfig.DnsConfigPath)
 		} else {
-			if err = json.Unmarshal(data, dnsConfig); err != nil {
+			if err = json.Unmarshal(data, coreDnsConfig); err != nil {
 				log.Panicf("Failed to unmarshal dns.json")
 			}
 		}
 	}
-	dConfig, err := dnsConfig.Build()
+	dConfig, err := coreDnsConfig.Build()
 	if err != nil {
 		log.Panicf("Failed to understand dns.json, Please check: https://xtls.github.io/config/base/dns/ for help: %s", err)
 	}
-	policyConfig := &conf.PolicyConfig{}
-	policyConfig.Levels = map[uint32]*conf.Policy{0: &conf.Policy{
-		StatsUserUplink:   true,
-		StatsUserDownlink: true,
-	}}
-	pConfig, _ := policyConfig.Build()
+	// Policy config
+	levelPolicyConfig := parseConnectionConfig(panelConfig.ConnetionConfig)
+	corePolicyConfig := &conf.PolicyConfig{}
+	corePolicyConfig.Levels = map[uint32]*conf.Policy{0: levelPolicyConfig}
+	pConfig, _ := corePolicyConfig.Build()
 	config := &core.Config{
 		App: []*serial.TypedMessage{
-			serial.ToTypedMessage(logConfig.Build()),
+			serial.ToTypedMessage(coreLogConfig.Build()),
 			serial.ToTypedMessage(&mydispatcher.Config{}),
 			serial.ToTypedMessage(&stats.Config{}),
 			serial.ToTypedMessage(&proxyman.InboundConfig{}),
@@ -101,12 +108,20 @@ func (p *Panel) Start() {
 			apiClient = sspanel.New(nodeConfig.ApiConfig)
 		case "V2board":
 			apiClient = v2board.New(nodeConfig.ApiConfig)
+		case "PMpanel":
+			apiClient = pmpanel.New(nodeConfig.ApiConfig)
 		default:
 			log.Panicf("Unsupport panel type: %s", nodeConfig.PanelType)
 		}
 		var controllerService service.Service
 		// Regist controller service
-		controllerService = controller.New(server, apiClient, nodeConfig.ControllerConfig)
+		defaultControllerConfig := getDefaultControllerConfig()
+		if nodeConfig.ControllerConfig != nil {
+			if _, err := diff.Merge(defaultControllerConfig, nodeConfig.ControllerConfig, defaultControllerConfig); err != nil {
+				log.Panicf("Read Controller Config Failed")
+			}
+		}
+		controllerService = controller.New(server, apiClient, defaultControllerConfig)
 		p.Service = append(p.Service, controllerService)
 
 	}
@@ -134,5 +149,25 @@ func (p *Panel) Close() {
 	}
 	p.Server.Close()
 	p.Running = false
+	return
+}
+
+func parseConnectionConfig(c *ConnetionConfig) (policy *conf.Policy) {
+	defaultConnetionConfig := getDefaultConnetionConfig()
+	if c != nil {
+		if _, err := diff.Merge(defaultConnetionConfig, c, defaultConnetionConfig); err != nil {
+			log.Panicf("Read ConnetionConfig failed: %s", err)
+		}
+	}
+	policy = &conf.Policy{
+		StatsUserUplink:   true,
+		StatsUserDownlink: true,
+		Handshake:         &defaultConnetionConfig.Handshake,
+		ConnectionIdle:    &defaultConnetionConfig.ConnIdle,
+		UplinkOnly:        &defaultConnetionConfig.UplinkOnly,
+		DownlinkOnly:      &defaultConnetionConfig.DownlinkOnly,
+		BufferSize:        &defaultConnetionConfig.BufferSize,
+	}
+
 	return
 }

@@ -1,11 +1,17 @@
 Log:
-  Level: debug # Log level: none, error, warning, info, debug 
+  Level: none # Log level: none, error, warning, info, debug 
   AccessPath: # ./access.Log
   ErrorPath: # ./error.log
-DnsConfigPath: # ./dns.json Path to dns config 
+DnsConfigPath: # ./dns.json Path to dns config
+ConnetionConfig:
+  Handshake: 4 # Handshake time limit, Second
+  ConnIdle: 10 # Connection idle time limit, Second
+  UplinkOnly: 2 # Time limit when the connection downstream is closed, Second
+  DownlinkOnly: 4 # Time limit when the connection is closed after the uplink is closed, Second
+  BufferSize: 64 # The internal cache size of each connection, kB 
 Nodes:
   -
-    PanelType: "SSpanel" # Panel type: SSpanel, V2board
+    PanelType: "SSpanel" # Panel type: SSpanel, V2board, PMpanel
     ApiConfig:
       ApiHost: "http://127.0.0.1:667"
       ApiKey: "123"

@@ -26,5 +26,5 @@ type FallBackConfig struct {
 	SNI              string `mapstructure:"SNI"`
 	Path             string `mapstructure:"Path"`
 	Dest             string `mapstructure:"Dest"`
-	ProxyProtocolVer int    `mapstructure:"ProxyProtocolVer"`
+	ProxyProtocolVer uint64    `mapstructure:"ProxyProtocolVer"`
 }

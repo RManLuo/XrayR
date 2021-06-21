@@ -42,10 +42,11 @@ A Xray backend framework that can easily support many panels.
 | 自定义DNS       | √     | √      | √           |
 ## 支持前端
 
-| 前端        | v2ray | trojan | shadowsocks                    |
-| ----------- | ----- | ------ | ------------------------------ |
-| sspanel-uim | √     | √      | √ (Shadowsocks - 单端口多用户) |
-| v2board     | √     | √      | √                              |
+| 前端                                                 | v2ray | trojan | shadowsocks                    |
+| ---------------------------------------------------- | ----- | ------ | ------------------------------ |
+| sspanel-uim                                          | √     | √      | √ (Shadowsocks - 单端口多用户) |
+| v2board                                              | √     | √      | √                              |
+| [PMPanel](https://github.com/ByteInternetHK/PMPanel) | √     | X      | √                              |
 
 ## 软件安装
 ### 一键安装
@@ -95,6 +96,7 @@ TRX&(USDT-TRC20): THnoBdGW8W8tkCgATAbfTtEWV7jH3dz1dZ
 | 2021/05/28 | Anonymous                                      | 12 usdt    |
 | 2021/05/28 | Anonymous                                      | 6.66 usdt  |
 | 2021/06/02 | Anonymous                                      | 30 usdt    |
+| 2021/06/07 | Anonymous                                      | 23.3 usdt  |
 ## Stargazers over time
 
 [![Stargazers over time](https://starchart.cc/XrayR-project/XrayR.svg)](https://starchart.cc/XrayR-project/XrayR)
