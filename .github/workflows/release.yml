@@ -183,4 +183,4 @@ jobs:
           file: ./XrayR-${{ steps.get_filename.outputs.ASSET_NAME }}.zip*
           tag: ${{ github.ref }}
           file_glob: true
-{"mode":"full","isActive":false}
+
