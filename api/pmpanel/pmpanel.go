@@ -338,7 +338,7 @@ func (c *APIClient) ReportIllegal(detectResultList *[]api.DetectResult) error {
 // ParseV2rayNodeResponse parse the response for the given nodeinfor format
 func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (*api.NodeInfo, error) {
 	var enableTLS bool
-	var path, host, TLStype, transportProtocol, serviceName string
+	var path, host, TLStype, transportProtocol string
 	var speedlimit uint64 = 0
 	if nodeInfoResponse.RawServerString == "" {
 		return nil, fmt.Errorf("No server info in response")
@@ -383,9 +383,7 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 			rawPath := strings.Join(conf[1:], "=") // In case of the path strings contains the "="
 			path = rawPath
 		case "host":
-			host = value
-		case "serviceName":
-			serviceName = value	
+			host = value	
 		}
 	}
 	if c.SpeedLimit > 0 {
@@ -407,8 +405,6 @@ func (c *APIClient) ParseV2rayNodeResponse(nodeInfoResponse *NodeInfoResponse) (
 		Path:              path,
 		Host:              host,
 		EnableVless:       c.EnableVless,
-		ServiceName:       serviceName,
-		MultiMode:         true,
 	}
 
 	return nodeinfo, nil
@@ -450,7 +446,7 @@ func (c *APIClient) ParseSSNodeResponse(nodeInfoResponse *NodeInfoResponse) (*ap
 func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) (*api.NodeInfo, error) {
 	// 域名或IP;port=连接端口#偏移端口|host=xx
 	// gz.aaa.com;port=443#12345|host=hk.aaa.com
-	var p, TLSType, host, outsidePort, insidePort, transportProtocol, serviceName string
+	var p, TLSType, host, outsidePort, insidePort,  string
 	var speedlimit uint64 = 0
 	if c.EnableXTLS {
 		TLSType = "xtls"
@@ -487,25 +483,7 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
 	}
 	
-	serverConf := strings.Split(nodeInfoResponse.RawServerString, ";")
-	extraServerConf := strings.Split(serverConf[1], "|")
-	for _, item := range extraServerConf {
-		conf := strings.Split(item, "=")
-		key := conf[0]
-		if key == "" {
-			transportProtocol = "tcp"
-			serviceName = ""
-		}
-		value := conf[1]
-		switch key {
-		case "grpc":
-			transportProtocol = "grpc"
-		case "serviceName":
-			serviceName = value
-		default:
-			transportProtocol = "tcp"
-		}
-	}
+
 	// Create GeneralNodeInfo
 	nodeinfo := &api.NodeInfo{
 		NodeType:          c.NodeType,
@@ -516,8 +494,6 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 		EnableTLS:         true,
 		TLSType:           TLSType,
 		Host:              host,
-		ServiceName:       serviceName,
-		MultiMode:         true,
 	}
 
 	return nodeinfo, nil
