@@ -140,6 +140,12 @@ func InboundBuilder(config *Config, nodeInfo *api.NodeInfo) (*core.InboundHandle
 			Path: nodeInfo.Path,
 		}
 		streamSetting.HTTPSettings = httpSettings
+	} else if networkType == "grpc" {
+		grpcSettings := &conf.GRPCConfig{
+			ServiceName: nodeInfo.ServiceName,
+			MultiMode: nodeInfo.MultiMode,
+		}
+		streamSetting.GRPCConfig = grpcSettings
 	}
 
 	streamSetting.Network = &transportProtocol
