@@ -573,12 +573,6 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 	if err != nil {
 		return nil, err
 	}
-	if c.SpeedLimit > 0 {
-		speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
-	} else {
-		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
-	}
-	
 	
 	serverConf := strings.Split(nodeInfoResponse.RawServerString, ";")
 	extraServerConf := strings.Split(serverConf[1], "|")
@@ -599,6 +593,13 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 			transportProtocol = "tcp"
 		}
 	}
+	
+	if c.SpeedLimit > 0 {
+		speedlimit = uint64((c.SpeedLimit * 1000000) / 8)
+	} else {
+		speedlimit = uint64((nodeInfoResponse.SpeedLimit * 1000000) / 8)
+	}
+	
 	// Create GeneralNodeInfo
 	nodeinfo := &api.NodeInfo{
 		NodeType:          c.NodeType,
