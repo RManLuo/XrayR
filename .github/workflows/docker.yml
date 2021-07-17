@@ -43,5 +43,4 @@ jobs:
           --tag "${{ steps.prepare.outputs.docker_image }}:latest" \
           --build-arg REF=${{ steps.prepare.outputs.ref }} \
           --file Dockerfile .
-{"mode":"full","isActive":false}
-{"mode":"full","isActive":false}
+
