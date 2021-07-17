@@ -576,12 +576,13 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 	
 	serverConf := strings.Split(nodeInfoResponse.RawServerString, ";")
 	extraServerConf := strings.Split(serverConf[1], "|")
+	transportProtocol = "tcp"
+        serviceName = ""
 	for _, item := range extraServerConf {
 		conf := strings.Split(item, "=")
 		key := conf[0]
 		if key == "" {
-			transportProtocol = "tcp"
-			serviceName = ""
+			continue
 		}
 		value := conf[1]
 		switch key {
@@ -589,8 +590,6 @@ func (c *APIClient) ParseTrojanNodeResponse(nodeInfoResponse *NodeInfoResponse) 
 			transportProtocol = "grpc"
 		case "serviceName":
 			serviceName = value
-		default:
-			transportProtocol = "tcp"
 		}
 	}
 	
